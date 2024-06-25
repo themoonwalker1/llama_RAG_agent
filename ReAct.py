@@ -1,3 +1,18 @@
+from agent import OllamaAgent
+from typing import List
+import re
+import importlib
+import os
+import sys
+import json
+import re
+import argparse
+from typing import List, Dict, Any
+from pandas import DataFrame
+from tqdm import tqdm
+from datasets import load_dataset
+
+import requests
 # ReactAgent class to manage the interaction process
 class ReactAgent:
     def __init__(self, args, mode: str, tools: List[str], max_steps: int, max_retries: int,
@@ -13,7 +28,7 @@ class ReactAgent:
         self.city_set = self.load_city(city_file_path)
         self.tools = self.load_tools(tools)
         self.tools_list = tools
-        self.llm = Llama3(llama_url=args.llama_url, model=react_llm_name, stream=args.stream, output=os.path.join(args.output_dir, "output.json"),
+        self.llm = OllamaAgent(llama_url=args.llama_url, model=react_llm_name, stream=args.stream, output=os.path.join(args.output_dir, "output.json"),
                           messages=[])
         self.__reset_agent()
 
@@ -22,7 +37,7 @@ class ReactAgent:
         self.query = query
         if reset:
             self.__reset_agent()
-        self.llm.add_message("system", zeroshot_react_agent_prompt.format(query=self.query, scratchpad=""))
+        self.llm.add_message("system", self.agent_prompt.format(query=self.query))
 
         while not self.is_halted() and not self.is_finished():
             self.step()

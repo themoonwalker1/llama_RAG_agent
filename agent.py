@@ -4,7 +4,7 @@ import json
 import requests
 
 
-class Llama3:
+class OllamaAgent:
     def __init__(self, llama_url: str, model: str, stream: bool, output: str, messages: List[Dict[str, Any]]):
         self.llama_url = llama_url
         self.model = model

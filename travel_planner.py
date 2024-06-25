@@ -8,7 +8,6 @@ from typing import List, Dict, Any
 from pandas import DataFrame
 from tqdm import tqdm
 from datasets import load_dataset
-import requests
 
 from ReAct import ReActFramework
 from prompts import zeroshot_react_agent_prompt
@@ -46,6 +45,13 @@ class DateError(Exception):
     pass
 
 class ActionHandler:
+    tools_list = ["notebook", "flights", "attractions", "accommodations", "restaurants", "googleDistanceMatrix",
+                  "planner", "cities"]
+
+    def __init__(self):
+        self.city_set = self.load_city('../database/background/citySet.txt')
+        self.tools = self.load_tools(tools=self.tools_list)
+
     def handle_flightsearch(self, args: str):
         """Handle the FlightSearch action."""
         from_city, to_city, date = args.split(', ')
@@ -55,7 +61,7 @@ class ActionHandler:
             raise CityError(f"Invalid cities: {from_city}, {to_city}")
         self.current_data = self.tools['flights'].run(from_city, to_city, date)
         self.current_observation = to_string(self.current_data)
-        self.json_log[-1]['state'] = 'Successful'
+        return 'Successful'
 
     def handle_attractionsearch(self, args: str):
         """Handle the AttractionSearch action."""
@@ -64,7 +70,7 @@ class ActionHandler:
             raise CityError(f"Invalid city: {city}")
         self.current_data = self.tools['attractions'].run(city)
         self.current_observation = to_string(self.current_data)
-        self.json_log[-1]['state'] = 'Successful'
+        return 'Successful'
 
     def handle_accommodationsearch(self, args: str):
         """Handle the AccommodationSearch action."""
@@ -73,7 +79,7 @@ class ActionHandler:
             raise CityError(f"Invalid city: {city}")
         self.current_data = self.tools['accommodations'].run(city)
         self.current_observation = to_string(self.current_data)
-        self.json_log[-1]['state'] = 'Successful'
+        return 'Successful'
 
     def handle_restaurantsearch(self, args: str):
         """Handle the RestaurantSearch action."""
@@ -82,33 +88,47 @@ class ActionHandler:
             raise CityError(f"Invalid city: {city}")
         self.current_data = self.tools['restaurants'].run(city)
         self.current_observation = to_string(self.current_data)
-        self.json_log[-1]['state'] = 'Successful'
+        return 'Successful'
 
     def handle_citysearch(self, args: str):
         """Handle the CitySearch action."""
         state = args.strip()
         self.current_data = self.tools['cities'].run(state)
         self.current_observation = to_string(self.current_data)
-        self.json_log[-1]['state'] = 'Successful'
+        return 'Successful'
 
     def handle_googledistancematrix(self, args: str):
         """Handle the GoogleDistanceMatrix action."""
         origin, destination, mode = args.split(', ')
         self.current_data = self.tools['googleDistanceMatrix'].run(origin, destination, mode)
         self.current_observation = to_string(self.current_data)
-        self.json_log[-1]['state'] = 'Successful'
+        return 'Successful'
 
     def handle_notebookwrite(self, args: str):
         """Handle the NotebookWrite action."""
         print("writing to notebook")
         self.current_observation = str(self.tools['notebook'].write(self.current_data, args))
-        self.json_log[-1]['state'] = 'Successful'
+        return 'Successful'
 
     def handle_planner(self, args: str):
         """Handle the Planner action."""
         self.current_observation = str(self.tools['planner'].run(str(self.tools['notebook'].list_all()), args))
         self.answer = self.current_observation
-        self.json_log[-1]['state'] = 'Successful'
+        return 'Successful'
+
+    def load_tools(self, tools: List[str]) -> Dict[str, Any]:
+        """Load the tools specified in the tools list."""
+        tools_map = {}
+        for tool_name in tools:
+            module = importlib.import_module(f"tools.{tool_name}.apis")
+            tool_class = getattr(module, tool_name[0].upper() + tool_name[1:])
+            tools_map[tool_name] = tool_class()
+        return tools_map
+
+    def load_city(self, city_set_path: str) -> List[str]:
+        """Load the list of valid cities from a file."""
+        with open(city_set_path, 'r') as file:
+            return file.read().strip().split('\n')
 
 
 def validate_date_format(date_str: str) -> bool:
@@ -137,14 +157,11 @@ if __name__ == '__main__':
 
     # Load the dataset based on the set type
     dataset = load_dataset('osunlp/TravelPlanner', args.set_type)[args.set_type]
-    tools_list = ["notebook", "flights", "attractions", "accommodations", "restaurants", "googleDistanceMatrix",
-                  "planner", "cities"]
 
     # Initialize the ReactAgent
-    agent = ReActFramework(args, mode='zero_shot', tools=tools_list, max_steps=20, max_retries=3,
+    agent = ReActFramework(args, mode='zero_shot', max_steps=20, max_retries=3,
                        illegal_early_stop_patience=3,
                        react_llm_name=args.model_name, planner_llm_name=args.model_name,
-                       city_file_path='../database/background/citySet.txt',
                        agent_prompt=zeroshot_react_agent_prompt,
                        action_mapping=action_mapping,
                        action_handler=ActionHandler)

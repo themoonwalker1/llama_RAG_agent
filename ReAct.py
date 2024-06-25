@@ -1,23 +1,14 @@
-from agent import OllamaAgent
-from typing import List
-import re
-import importlib
 import os
-import sys
-import json
 import re
-import argparse
-from typing import List, Dict, Any
-from pandas import DataFrame
-from tqdm import tqdm
-from datasets import load_dataset
 
-import requests
+from agent import OllamaAgent
+
+
 # ReactFramework class to manage the interaction process
 class ReActFramework:
-    def __init__(self, args, mode: str, tools: List[str], max_steps: int, max_retries: int,
+    def __init__(self, args, mode: str, max_steps: int, max_retries: int,
                  illegal_early_stop_patience: int,
-                 react_llm_name: str, planner_llm_name: str, city_file_path: str, agent_prompt: str,
+                 react_llm_name: str, planner_llm_name: str, agent_prompt: str,
                  action_mapping: dict, action_handler):
         self.max_steps = max_steps
         self.mode = mode
@@ -26,9 +17,6 @@ class ReActFramework:
         self.agent_prompt = agent_prompt
         self.illegal_early_stop_patience = illegal_early_stop_patience
         self.max_retries = max_retries
-        self.city_set = self.load_city(city_file_path)
-        self.tools = self.load_tools(tools)
-        self.tools_list = tools
         self.llm = OllamaAgent(llama_url=args.llama_url, model=react_llm_name, stream=args.stream, output=os.path.join(args.output_dir, "output.json"),
                           messages=[])
         self.action_mapping = action_mapping
@@ -40,7 +28,7 @@ class ReActFramework:
         self.query = query
         if reset:
             self.__reset_agent()
-        self.llm.add_message("system", self.agent_prompt.format(query=self.query))
+        self.llm.add_message("system", self.agent_prompt.format(query=self.query, scratchpad=self.scratchpad))
 
         while not self.is_halted() and not self.is_finished():
             self.step()
@@ -81,7 +69,6 @@ class ReActFramework:
 
     def prompt_agent(self, message: str) -> str:
         """Prompt the agent with a message and return the response."""
-        self.llm.add_message("user", "\nImportant Information Stored in Notebook:" + str(self.tools['notebook'].list_all()) + "\nMake sure to look at the conversation history and Notebook to not repeat previous steps and double check accuracy before you give an answer to the following. If you successfully got information from an action, then make sure to always write it in the notebook. Only give me the following next step:\n" + message)
         response = self.llm.send_query()
         return response['message']['content']
 
@@ -98,22 +85,6 @@ class ReActFramework:
         self.llm.messages = []
         self.retry_record = {key: 0 for key in self.action_mapping.values()}
         self.retry_record['invalidAction'] = 0
-        self.tools = self.load_tools(self.tools_list)
-
-
-    def load_tools(self, tools: List[str]) -> Dict[str, Any]:
-        """Load the tools specified in the tools list."""
-        tools_map = {}
-        for tool_name in tools:
-            module = importlib.import_module(f"tools.{tool_name}.apis")
-            tool_class = getattr(module, tool_name[0].upper() + tool_name[1:])
-            tools_map[tool_name] = tool_class()
-        return tools_map
-
-    def load_city(self, city_set_path: str) -> List[str]:
-        """Load the list of valid cities from a file."""
-        with open(city_set_path, 'r') as file:
-            return file.read().strip().split('\n')
 
     def parse_action(self, action_str: str):
         """Parse the action string to extract the action type and arguments."""
@@ -122,8 +93,6 @@ class ReActFramework:
         if match:
             return match.group(1), match.group(2)
         return None, None
-
-
 
     def handle_action(self, action_type: str, action_arg: str):
         """Handle the action based on its type."""

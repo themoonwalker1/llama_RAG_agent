@@ -19,6 +19,7 @@ class OllamaAgent:
         print(content)
         self.messages.append({"role": role, "content": content})
 
+
     def send_query(self) -> Dict[str, Any]:
         """Send the query to the Llama model and return the response."""
         request = {

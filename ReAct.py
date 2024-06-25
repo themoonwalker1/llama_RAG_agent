@@ -13,11 +13,12 @@ from tqdm import tqdm
 from datasets import load_dataset
 
 import requests
-# ReactAgent class to manage the interaction process
-class ReactAgent:
+# ReactFramework class to manage the interaction process
+class ReActFramework:
     def __init__(self, args, mode: str, tools: List[str], max_steps: int, max_retries: int,
                  illegal_early_stop_patience: int,
-                 react_llm_name: str, planner_llm_name: str, city_file_path: str, agent_prompt: str):
+                 react_llm_name: str, planner_llm_name: str, city_file_path: str, agent_prompt: str,
+                 action_mapping: dict, action_handler):
         self.max_steps = max_steps
         self.mode = mode
         self.react_name = react_llm_name
@@ -30,6 +31,8 @@ class ReactAgent:
         self.tools_list = tools
         self.llm = OllamaAgent(llama_url=args.llama_url, model=react_llm_name, stream=args.stream, output=os.path.join(args.output_dir, "output.json"),
                           messages=[])
+        self.action_mapping = action_mapping
+        self.action_handler = action_handler
         self.__reset_agent()
 
     def run(self, query: str, reset: bool = True):
@@ -93,7 +96,7 @@ class ReactAgent:
         self.current_data = None
         self.last_actions = []
         self.llm.messages = []
-        self.retry_record = {key: 0 for key in action_mapping.values()}
+        self.retry_record = {key: 0 for key in self.action_mapping.values()}
         self.retry_record['invalidAction'] = 0
         self.tools = self.load_tools(self.tools_list)
 
@@ -124,77 +127,14 @@ class ReactAgent:
 
     def handle_action(self, action_type: str, action_arg: str):
         """Handle the action based on its type."""
-        if action_type in action_mapping:
+        if action_type in self.action_mapping:
             try:
-                action_func = getattr(self, f'handle_{action_type.lower()}')
+                action_func = getattr(self.action_handler, f'handle_{action_type.lower()}')
                 action_func(action_arg)
             except Exception as e:
                 self.current_observation = f'Error in {action_type}: {str(e)}'
                 self.json_log[-1]['state'] = 'Error'
 
-    def handle_flightsearch(self, args: str):
-        """Handle the FlightSearch action."""
-        from_city, to_city, date = args.split(', ')
-        if not validate_date_format(date):
-            raise DateError(f"Invalid date format: {date}")
-        if from_city not in self.city_set or to_city not in self.city_set:
-            raise CityError(f"Invalid cities: {from_city}, {to_city}")
-        self.current_data = self.tools['flights'].run(from_city, to_city, date)
-        self.current_observation = to_string(self.current_data)
-        self.json_log[-1]['state'] = 'Successful'
-
-    def handle_attractionsearch(self, args: str):
-        """Handle the AttractionSearch action."""
-        city = args.strip()
-        if city not in self.city_set:
-            raise CityError(f"Invalid city: {city}")
-        self.current_data = self.tools['attractions'].run(city)
-        self.current_observation = to_string(self.current_data)
-        self.json_log[-1]['state'] = 'Successful'
-
-    def handle_accommodationsearch(self, args: str):
-        """Handle the AccommodationSearch action."""
-        city = args.strip()
-        if city not in self.city_set:
-            raise CityError(f"Invalid city: {city}")
-        self.current_data = self.tools['accommodations'].run(city)
-        self.current_observation = to_string(self.current_data)
-        self.json_log[-1]['state'] = 'Successful'
-
-    def handle_restaurantsearch(self, args: str):
-        """Handle the RestaurantSearch action."""
-        city = args.strip()
-        if city not in self.city_set:
-            raise CityError(f"Invalid city: {city}")
-        self.current_data = self.tools['restaurants'].run(city)
-        self.current_observation = to_string(self.current_data)
-        self.json_log[-1]['state'] = 'Successful'
-
-    def handle_citysearch(self, args: str):
-        """Handle the CitySearch action."""
-        state = args.strip()
-        self.current_data = self.tools['cities'].run(state)
-        self.current_observation = to_string(self.current_data)
-        self.json_log[-1]['state'] = 'Successful'
-
-    def handle_googledistancematrix(self, args: str):
-        """Handle the GoogleDistanceMatrix action."""
-        origin, destination, mode = args.split(', ')
-        self.current_data = self.tools['googleDistanceMatrix'].run(origin, destination, mode)
-        self.current_observation = to_string(self.current_data)
-        self.json_log[-1]['state'] = 'Successful'
-
-    def handle_notebookwrite(self, args: str):
-        """Handle the NotebookWrite action."""
-        print("writing to notebook")
-        self.current_observation = str(self.tools['notebook'].write(self.current_data, args))
-        self.json_log[-1]['state'] = 'Successful'
-
-    def handle_planner(self, args: str):
-        """Handle the Planner action."""
-        self.current_observation = str(self.tools['planner'].run(str(self.tools['notebook'].list_all()), args))
-        self.answer = self.current_observation
-        self.json_log[-1]['state'] = 'Successful'
     def is_finished(self) -> bool:
         """Check if the agent has finished its process."""
         return self.finished
